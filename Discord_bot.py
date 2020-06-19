@@ -16,7 +16,7 @@ async def on_ready():
     print('Bot is ready.\nType /bot_help to see bot fucntions')
 
 
-# Ответ бота на сообщения
+# Ответ бота на сообщения с гайдом
 @client.command()
 async def bot_help(message):
     guid = ('This bot is allow u to store files.\n/send "filename" "discription" - to send '
@@ -28,11 +28,13 @@ async def bot_help(message):
     await message.channel.send(guid)
 
 
+# Функция очистки чата
 @client.command()
 async def clear(ctx, amount):
     pass
 
 
+# команда сохранения файла
 @client.command()
 async def send(ctx):
     download_link = ctx.message.attachments[0].url
@@ -60,6 +62,7 @@ async def send(ctx):
     '''
 
 
+# команда получения списка документов из базы данных
 @client.command()
 async def get_doc_list(ctx):
     try:
@@ -78,13 +81,13 @@ async def get_doc_list(ctx):
         pass
 
 
+# команда получения списка ответов
 @client.command()
 async def get_answer_list(ctx):
     client_username = str(ctx.author.id)
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
-    cursor.execute("SELECT answers_id, id, filename FROM file_store WHERE user_id = %s",
-                   (client_username,))
+    cursor.execute("SELECT answer_id, answer FROM user_answers WHERE user_id = %s", (client_username,))
     rows = cursor.fetchall()
     print(rows)
     for row in rows:
@@ -92,26 +95,30 @@ async def get_answer_list(ctx):
             await ctx.message.channel.send('Пусто')
             break
         else:
-            await ctx.message.channel.send(f'id: {row[0]} text: Ответ на документ "{row[1]}" с текстом "{row[2]}"')
+            await ctx.message.channel.send(f'id: {row[0]} text: {row[1]}')
 
 
+# команда создания ответа статуса сохранения файла по id
 @client.command()
 async def get_answer(ctx, num):
     client_username = str(ctx.author.id)
-    counter = int()
+    num = int(num)
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
-    counter += 1
-    row = cursor.fetchall()
-    cursor.execute("INSERT INTO file_store (answer_id) VALUES (%s) WHERE user_id = %s",
-                   (counter, client_username))
-    cursor.execute("SELECT answers_id, id, filename FROM file_store WHERE (user_id = %s, answer_id = %s",
-                   (client_username,))
-    ctx.message.channel.send(f'id: {row[0]} text: Ответ на документ "{row[1]}" с текстом "{row[2]}"')
+    try:
+        cursor.execute(f"SELECT id, filename FROM file_store WHERE (user_id = %s) AND (id = %s)", (client_username, num))
+        row = cursor.fetchall()
+        print(row)
+        answer = f'Ответ на документ "{row[0][0]}" с текстом "{row[0][1]}"'
+        await ctx.message.channel.send(answer)
+        cursor.execute("INSERT INTO user_answers (user_id, answer) VALUES (%s, %s)",
+                        (client_username, answer))
+        conn.commit()
+    except Exception as ex:
+        await ctx.message.channel.send('This file already deleted')
 
 
-# сложна _)))
-
+# команда удаления файла из базы данных
 @client.command()
 async def delete_doc(ctx, num):
     client_username = str(ctx.author.id)
@@ -122,20 +129,23 @@ async def delete_doc(ctx, num):
     cursor.execute(f"DELETE FROM file_store WHERE id = {num}")
     conn.commit()
     # , user_id = {client_username}
-    await ctx.message.channel.send('deleted document')
+    await ctx.message.channel.send('deleting answer done')
     print('done')
 
 
+# команда удаления ответа
 @client.command()
 async def delete_answer(ctx, num):
     client_username = str(ctx.author.id)
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
-    cursor.execute("DELETE answer_id FROM file_store WHERE (answers_id = %s, user_id = %s", (num, client_username))
-    ctx.message.channel.send('deleted answer')
+    num = int(num)
+    cursor.execute(f"DELETE  FROM user_answers WHERE (answer_id = %s) AND (user_id = %s)", (num, client_username))
+    conn.commit()
+    await ctx.message.channel.send('deleting answer done')
     print('done')
 
-
+# запуск бота
 client.run(TOKEN)
 
 # password admin
