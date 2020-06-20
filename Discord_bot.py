@@ -7,24 +7,37 @@ from discord.ext import commands
 import asyncio
 import psycopg2
 
+# испорт токена , инициализация команд
 TOKEN = open('token.txt', 'r').read()
+CHANNEL_ID = 722454412458590260
 client = commands.Bot(command_prefix='/')
 
 
+# приветствие пользователей после запуска бота
 @client.event
 async def on_ready():
-    print('Bot is ready.\nType /bot_help to see bot fucntions')
+    channel = client.get_channel(CHANNEL_ID)
+
+    await channel.send('Bot is ready.'
+                       '\nType /bot_help to see bot fucntions')
 
 
-# Ответ бота на сообщения с гайдом
+@client.event
+async def on_member_join():
+    pass
+
+
+# Руководство к командам бота
 @client.command()
 async def bot_help(message):
-    guid = ('This bot is allow u to store files.\n/send "filename" "discription" - to send '
-            'file for bot. \n/get_doc_list - to see all your documents and discriptions u send '
-            'before.\n/get_answer_list - to see your answers.\n/get_answer "answer id" - to '
-            'set your answer by id for your file. \n/delete_doc "doc id" - to delete your document by '
-            'id.\n/delete_answer "answer id" - to delete your answer bu id.\n/clear "amount of messages" - to delete '
-            'chat messages.')
+    guid = ('This bot is allow u to store files.'
+            '\n\n/send "file" "discription" - to send file to bot. '
+            '\n\n/get_doc_list - to see all your documents and discriptions u send before.'
+            '\n\n/get_answer_list - to see your answers.'
+            '\n\n/get_answer "answer id" - to set your answer by id for your file. '
+            '\n\n/delete_doc "doc id" - to delete your document by id.'
+            '\n\n/delete_answer "answer id" - to delete your answer bu id.'
+            '\n\nget_user_doc "user id" - to see user documents list.')
     await message.channel.send(guid)
 
 
@@ -37,44 +50,45 @@ async def clear(ctx, amount):
 # команда сохранения файла
 @client.command()
 async def send(ctx):
+    # информация для записи в БД
     download_link = ctx.message.attachments[0].url
     # filename = ctx.message.attachments[0].filename
     users_file_name = ctx.message.content[6:]
     client_username = ctx.author.id
+
+    # добавление информации пользователя в БД
     try:
         conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
         cursor = conn.cursor()
+
         cursor.execute("INSERT INTO file_store (user_id,document_url,filename) VALUES (%s,%s,%s)",
                        (client_username, download_link, users_file_name))
         conn.commit()
-        await ctx.message.channel.send('added successfully')
+
     except Exception as ex:
         print(ex)
 
-    finally:
-        pass
-
-    '''
-    file_request = requests.get(download_link, allow_redirects=True)
-    file_request.encoding = 'utf-8'
-    with open('test.txt', 'w', encoding="utf-8") as f:
-        f.write(str(file_request.text))
-    '''
+    else:
+        await ctx.message.channel.send('added successfully')
 
 
 # команда получения списка документов из базы данных
 @client.command()
 async def get_doc_list(ctx):
     try:
+        # вывод всех документов по id пользователя
         conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
         cursor = conn.cursor()
+
         client_username = str(ctx.author.id)
-        # print(client_username)
+
         cursor.execute("SELECT id,document_url, filename FROM file_store WHERE user_id = %s",
                        (client_username,))
         rows = cursor.fetchall()
+
         for row in rows:
             await ctx.message.channel.send(f'id: {row[0]} text: {row[2]} \n{row[1]}')
+
     except Exception as ex:
         print(ex)
     finally:
@@ -84,12 +98,15 @@ async def get_doc_list(ctx):
 # команда получения списка ответов
 @client.command()
 async def get_answer_list(ctx):
-    client_username = str(ctx.author.id)
+    # вывод всех ответов по id пользователя
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
+
+    client_username = str(ctx.author.id)
+
     cursor.execute("SELECT answer_id, answer FROM user_answers WHERE user_id = %s", (client_username,))
     rows = cursor.fetchall()
-    print(rows)
+
     for row in rows:
         if row[0] is None:
             await ctx.message.channel.send('Пусто')
@@ -101,19 +118,24 @@ async def get_answer_list(ctx):
 # команда создания ответа статуса сохранения файла по id
 @client.command()
 async def get_answer(ctx, num):
-    client_username = str(ctx.author.id)
-    num = int(num)
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
+
+    client_username = str(ctx.author.id)
+    num = int(num)
+
     try:
-        cursor.execute(f"SELECT id, filename FROM file_store WHERE (user_id = %s) AND (id = %s)", (client_username, num))
+        cursor.execute(f"SELECT id, filename FROM file_store WHERE (user_id = %s) AND (id = %s)",
+                       (client_username, num))
         row = cursor.fetchall()
-        print(row)
+
         answer = f'Ответ на документ "{row[0][0]}" с текстом "{row[0][1]}"'
         await ctx.message.channel.send(answer)
+
         cursor.execute("INSERT INTO user_answers (user_id, answer) VALUES (%s, %s)",
-                        (client_username, answer))
+                       (client_username, answer))
         conn.commit()
+
     except Exception as ex:
         await ctx.message.channel.send('This file already deleted')
 
@@ -121,29 +143,53 @@ async def get_answer(ctx, num):
 # команда удаления файла из базы данных
 @client.command()
 async def delete_doc(ctx, num):
-    client_username = str(ctx.author.id)
-    print(client_username)
-    num = int(num)
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
-    cursor.execute(f"DELETE FROM file_store WHERE id = {num}")
+
+    client_username = str(ctx.author.id)
+    num = int(num)
+
+    cursor.execute(f"DELETE FROM file_store WHERE (id = %s) AND (user_id =%s)", (num, client_username))
     conn.commit()
-    # , user_id = {client_username}
+
     await ctx.message.channel.send('deleting answer done')
-    print('done')
 
 
 # команда удаления ответа
 @client.command()
 async def delete_answer(ctx, num):
-    client_username = str(ctx.author.id)
     conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
     cursor = conn.cursor()
+
+    client_username = str(ctx.author.id)
     num = int(num)
+
     cursor.execute(f"DELETE  FROM user_answers WHERE (answer_id = %s) AND (user_id = %s)", (num, client_username))
     conn.commit()
+
     await ctx.message.channel.send('deleting answer done')
-    print('done')
+
+
+# получение списка документов пользователей по id
+@client.command()
+async def get_user_doc(ctx, user_id):
+    try:
+        # вывод всех документов по id пользователя
+        conn = psycopg2.connect(dbname='File_Browser', user='postgres', password='admin')
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id,document_url, filename FROM file_store WHERE user_id = %s",
+                       (user_id,))
+        rows = cursor.fetchall()
+
+        for row in rows:
+            await ctx.message.channel.send(f'id: {row[0]} text: {row[2]} \n{row[1]}')
+
+    except Exception as ex:
+        print(ex)
+    finally:
+        pass
+
 
 # запуск бота
 client.run(TOKEN)
