@@ -6,6 +6,7 @@ link to server https://discordapp.com/oauth2/authorize?&client_id=72244019450609
 from discord.ext import commands
 import asyncio
 import psycopg2
+from psycopg2 import OperationalError, errors, errorcodes
 
 # испорт токена , инициализация команд
 TOKEN = open('token.txt', 'r').read()
@@ -85,14 +86,14 @@ async def get_doc_list(ctx):
         cursor.execute("SELECT id,document_url, filename FROM file_store WHERE user_id = %s",
                        (client_username,))
         rows = cursor.fetchall()
+        if not rows:
+            ctx.message.channel.send('Empty list')
+        else:
+            for row in rows:
+                await ctx.message.channel.send(f'id: {row[0]} text: {row[2]} \n{row[1]}')
 
-        for row in rows:
-            await ctx.message.channel.send(f'id: {row[0]} text: {row[2]} \n{row[1]}')
-
-    except Exception as ex:
-        print(ex)
-    finally:
-        pass
+    except psycopg2.DatabaseError as ex:
+        await ctx.message.channel.send(ex)
 
 
 # команда получения списка ответов
@@ -109,7 +110,7 @@ async def get_answer_list(ctx):
 
     for row in rows:
         if row[0] is None:
-            await ctx.message.channel.send('Пусто')
+            await ctx.message.channel.send('Empty')
             break
         else:
             await ctx.message.channel.send(f'id: {row[0]} text: {row[1]}')
@@ -129,15 +130,18 @@ async def get_answer(ctx, num):
                        (client_username, num))
         row = cursor.fetchall()
 
-        answer = f'Ответ на документ "{row[0][0]}" с текстом "{row[0][1]}"'
+        answer = f'Answer for "{row[0][0]}" with text "{row[0][1]}"'
         await ctx.message.channel.send(answer)
 
         cursor.execute("INSERT INTO user_answers (user_id, answer) VALUES (%s, %s)",
                        (client_username, answer))
         conn.commit()
 
-    except Exception as ex:
-        await ctx.message.channel.send('This file already deleted')
+    except psycopg2.DatabaseError as error:
+        await ctx.message.channel.send('This file already deleted ', error)
+    except Exception as error:
+        print('error')
+        await ctx.message.channel.send('Error')
 
 
 # команда удаления файла из базы данных
